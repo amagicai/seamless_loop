@@ -186,9 +186,9 @@ class CompensateDriftAlign:
                 "max_features": ("INT", {"default": 300, "min": 20, "max": 5000, "step": 10}),
                 "min_matches": ("INT", {"default": 15, "min": 5, "max": 500, "step": 1}),
                 "anchor_frame": (cls.anchor_modes, {"default": "auto"}),
-                "transform": (cls.transform_methods,),
-                "interp": (cls.interp_methods,),
-                "upscale_method": (cls.upscale_methods,),
+                "transform": (cls.transform_methods, {"default": "affine"}),
+                "interp": (cls.interp_methods, {"default": "log"}),
+                "upscale_method": (cls.upscale_methods, {"default": "bicubic"}),
                 "drop_last_frames": ("INT", {"default": 1, "min": 0, "max": 1000, "step": 1}),
                 "mix_first_last": (cls.mix_modes, {"default": "off"}),
             }

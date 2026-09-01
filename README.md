@@ -15,6 +15,7 @@ motion, in either direction.
 ## Table of contents
 
 - [Installation](#installation)
+- [Usage](#usage)
 - [How it works](#how-it-works)
 - [The registration maths](#the-registration-maths)
   - [1. Feature detection & matching](#1-feature-detection--matching)
@@ -61,6 +62,27 @@ python -m pytest tests/test_align.py -q
 ```
 
 See [Testing](#testing) for details and troubleshooting.
+
+---
+
+## Usage
+
+The node is a simple **image batch in → image batch out** passthrough, so it
+drops into any workflow that already produces and consumes an `images` stack
+`(B, H, W, C)`. A typical placement is right after the decode and before the
+video writer:
+
+![Compensate Drift wired between VAE Decode and Create Video](comfyui_screenshot.png)
+
+```
+VAE Decode ──► Compensate Drift ──► Create Video
+   (images)        (re-register)      (images)
+```
+
+Feed it your batch of frames and read the re-registered batch straight off the
+`images` output — no other wiring required. Use `drop_last_frames` /
+`mix_first_last` (see [Parameter reference](#parameter-reference)) for a
+seamless loop wrap.
 
 ---
 
@@ -307,12 +329,9 @@ each frame is radially corrected toward the first framing.
 | `anchor_frame` | `auto` / `first` / `last` | `auto` | Which frame's framing all outputs share. `auto` anchors to the more zoomed-in endpoint (see [Choosing the anchor frame](#4-choosing-the-anchor-frame)). |
 | `transform` | `affine` / `similarity` / `radial` | `affine` | Global model fit between endpoints. `affine` handles independent x/y scale & shear; `similarity` is rigid-ish (uniform scale + rotation + translation), more robust on noisy footage but cannot fix anisotropic stretch. `radial` corrects **only** radial (barrel/pincushion) distortion and is mutually exclusive with the affine family — it cannot pan/zoom/rotate (see [Radial distortion](#radial-distortion)). |
 | `interp` | `log` / `linear` | `log` | How the per-frame transform is interpolated between the anchors (see [Per-frame interpolation](#5-per-frame-interpolation)). `log` keeps zoom velocity constant; `linear` interpolates matrix coefficients directly. |
-| `upscale_method` | `nearest-exact` / `bilinear` / `area` / `bicubic` / `lanczos` | `nearest-exact`¹ | Resampling filter used for all warps. `bicubic`/`lanczos` are sharper; `area` is best when downsampling. |
+| `upscale_method` | `nearest-exact` / `bilinear` / `area` / `bicubic` / `lanczos` | `bicubic` | Resampling filter used for all warps. `bicubic`/`lanczos` are sharper; `area` is best when downsampling. |
 | `drop_last_frames` | `INT`, 0–1000, step 1 | `1` | How many trailing frames to trim from the output (also the loop-closure bookend). Clamped to `n−1`. |
 | `mix_first_last` | `off` / `on` | `off` | When `on` **and** `drop_last_frames == 1`, replace output frame 0 with the 50/50 blend of aligned first + dropped last frame for a seamless loop wrap (§7). Ignored otherwise. |
-
-¹ `upscale_method` is given as a plain option list so it defaults to its first
-entry.
 
 ---
 
