@@ -1,0 +1,23 @@
+[project]
+name = "seamless_loop"
+description = "Seamless-loop / FLV (first-last video) drift compensation: registers every frame of an image batch against one reference framing derived from the first/last frames (ORB + RANSAC affine/similarity), with optional radial-distortion correction, Lie-algebra log interpolation, and first/last loop blending."
+version = "1.0.0"
+license = "MIT"
+classifiers = [
+    # Node is pure Python / numpy / torch / OpenCV CPU-side image warping,
+    # so it runs on any OS and any GPU backend ComfyUI supports.
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+Repository = "https://github.com/amagicai/seamless_loop"
+#  Used by Comfy Registry https://registry.comfy.org
+Documentation = "https://github.com/amagicai/seamless_loop/wiki"
+"Bug Tracker" = "https://github.com/amagicai/seamless_loop/issues"
+
+[tool.comfy]
+PublisherId = "amagicai"
+DisplayName = "Compensate Drift (Auto Align First+Last)"
+Icon = "https://amagic.ai/assets/amagic_logo_text_400x400.jpg"
+includes = []
+# "requires-comfyui" = ">=1.0.0"  # ComfyUI version compatibility

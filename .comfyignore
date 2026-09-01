@@ -1,0 +1,4 @@
+# Keep dev-only files out of the published registry archive.
+# .comfyignore layers on top of .gitignore (untracked files are already excluded),
+# so only files that ARE git-tracked but should not ship need listing here.
+tests/
