@@ -7,8 +7,17 @@ import pytest
 cv2 = pytest.importorskip("cv2")
 torch = pytest.importorskip("torch")
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from seamless_loop import CompensateDriftAlign, apply_distortion, remove_distortion, solve_radial
+import importlib.util
+
+_PKG_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_spec = importlib.util.spec_from_file_location(
+    "comfyui_seamless_loop", os.path.join(_PKG_DIR, "__init__.py"))
+_pkg = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_pkg)
+SeamlessLoopAutoAlignFLV = _pkg.SeamlessLoopAutoAlignFLV
+apply_distortion = _pkg.apply_distortion
+remove_distortion = _pkg.remove_distortion
+solve_radial = _pkg.solve_radial
 
 ART = os.path.join(os.path.dirname(__file__), "artifacts_auto")
 
@@ -168,7 +177,7 @@ def _down(x):
 
 
 def test_align_preserves_shape_dtype_device():
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     images = make_first_zoomed_in()
     out = node.apply(images, 800, 15, "auto", "affine", "log", "bicubic", drop_last_frames=0)[0]
     assert out.shape == images.shape
@@ -177,14 +186,14 @@ def test_align_preserves_shape_dtype_device():
 
 
 def test_align_single_frame_is_identity():
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     images = torch.rand(1, 96, 128, 3)
     out = node.apply(images, 800, 15, "auto", "affine", "log", "bicubic")[0]
     assert torch.equal(out, images)
 
 
 def test_align_no_drift_is_identity():
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     images = make_first_zoomed_in()
     images = images[0].repeat(images.shape[0], 1, 1, 1)  # identical frames -> no drift
     out = node.apply(images, 800, 15, "auto", "affine", "log", "bicubic", drop_last_frames=0)[0]
@@ -196,7 +205,7 @@ def test_align_closes_loop():
     # Both drift directions must close the loop to a single framing with both
     # interpolation modes. Anisotropic needs affine, so similarity over x-only
     # zoom is tested separately.
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     for images in (make_first_zoomed_in(), make_last_zoomed_in()):
         for transform, interp in (("affine", "log"), ("affine", "linear"), ("similarity", "log")):
             out = node.apply(images, 800, 15, "auto", transform, interp, "bicubic", drop_last_frames=0)[0]
@@ -205,7 +214,7 @@ def test_align_closes_loop():
 
 def test_align_anisotropic_zoom():
     # x-only zoom needs affine: loop must close; similarity is expected to fail.
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     images = make_anisotropic()
     assert _loop_err(node.apply(images, 800, 15, "auto", "affine", "log", "bicubic", drop_last_frames=0)[0]) < 2.5
     assert _loop_err(node.apply(images, 800, 15, "auto", "similarity", "log", "bicubic", drop_last_frames=0)[0]) > 3.0
@@ -216,7 +225,7 @@ def test_align_shear_drift():
     # near-tie for the auto-anchor det test; the loop must still close. Shear is
     # affine (6 dof) so 'affine' registers it exactly; similarity (4 dof: uniform
     # scale + rotation + translation) cannot represent it and must fail.
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     h = w = 384
     base = make_scene(h)
     n = 11
@@ -229,14 +238,14 @@ def test_align_shear_drift():
 
 def test_align_featureless_frame_passes_through():
     # Featureless (blank) frames provide no features to align: pass through.
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     images = torch.full((5, 96, 96, 3), 0.5)
     out = node.apply(images, 800, 15, "auto", "affine", "log", "bicubic")[0]
     assert out.shape[0] < images.shape[0] or torch.allclose(out, images)
 
 
 def test_align_drop_last_frame_closes_loop():
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     images = make_first_zoomed_in()
     out = node.apply(images, 800, 15, "auto", "affine", "log", "bicubic", drop_last_frames=1)[0]
     assert out.shape[0] == images.shape[0] - 1
@@ -246,7 +255,7 @@ def test_align_drop_last_frame_closes_loop():
 def test_align_forced_anchor_frame():
     # 'first'/'last' must override the auto decision and close the loop to that
     # endpoint's framing, in both zoom directions.
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     for images in (make_first_zoomed_in(), make_last_zoomed_in()):
         for anchor in ("first", "last"):
             out = node.apply(images, 800, 15, anchor, "affine", "log", "bicubic", drop_last_frames=0)[0]
@@ -256,7 +265,7 @@ def test_align_forced_anchor_frame():
 def test_align_mix_first_last_blend():
     # With drop_last_frames=1 the dropped last frame must be blended 50/50 into
     # the first output frame for a seamless loop wrap.
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     images = make_first_zoomed_in()
     full = node.apply(images, 800, 15, "auto", "affine", "log", "bicubic", drop_last_frames=0)[0]
     out = node.apply(images, 800, 15, "auto", "affine", "log", "bicubic",
@@ -269,7 +278,7 @@ def test_align_mix_first_last_blend():
 
 def test_align_mix_first_last_gated():
     # The blend must be ignored unless drop_last_frames == 1.
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     images = make_first_zoomed_in()
     key = dict(max_features=800, min_matches=15, anchor_frame="auto", transform="affine",
                interp="log", upscale_method="bicubic")
@@ -284,7 +293,7 @@ def test_align_auto_anchor_direction_blackbox():
     # to the MORE zoomed-in endpoint (largest object). The anchor itself is the
     # identity warp, so it shows up as the one output frame that is byte-for-byte
     # unchanged while the far endpoint is re-registered into that framing.
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     key = dict(max_features=800, min_matches=15, anchor_frame="auto", transform="affine",
                interp="log", upscale_method="bicubic")
 
@@ -318,7 +327,7 @@ def test_align_auto_anchor_direction_blackbox():
 def test_align_zero_frames():
     # README: "1 frame, or 0 frames: returned unchanged". An empty batch must
     # come back empty without touching the detection path.
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     images = torch.zeros(0, 128, 128, 3)
     out = node.apply(images, 800, 15, "auto", "affine", "log", "bicubic")[0]
     assert out.shape == (0, 128, 128, 3)
@@ -327,7 +336,7 @@ def test_align_zero_frames():
 def test_align_two_frames_minimal_batch():
     # Smallest meaningful batch: f = i/(n-1) hits exactly 0 and 1; the whole
     # pipeline (match -> RANSAC -> interpolate -> warp) must still run.
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     images = make_first_zoomed_in(n=2)
     out = node.apply(images, 800, 15, "auto", "affine", "log", "bicubic", drop_last_frames=0)[0]
     assert out.shape == images.shape
@@ -336,7 +345,7 @@ def test_align_two_frames_minimal_batch():
 
 def test_align_drop_clamped_to_n_minus_1():
     # README: drop_last_frames >= n is clamped to n-1 so one frame always remains.
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     images = make_first_zoomed_in(n=11)
     out = node.apply(images, 800, 15, "auto", "affine", "log", "bicubic", drop_last_frames=100)[0]
     assert out.shape[0] == 1  # drop clamps to n-1 = 10 -> n - drop == 1
@@ -345,7 +354,7 @@ def test_align_drop_clamped_to_n_minus_1():
 def test_align_min_matches_gate_pass_through():
     # README: below min_matches confident matches the batch passes through
     # unchanged. Forcing the gate to the max makes any rich scene fail it.
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     images = make_first_zoomed_in(n=11)
     out = node.apply(images, 800, 500, "auto", "affine", "log", "bicubic", drop_last_frames=0)[0]
     assert torch.equal(out, images), "batch should be returned unchanged when the match gate fails"
@@ -355,7 +364,7 @@ def test_align_mismatched_endpoints_pass_through():
     # Endpoint frames with no shared structure yield (near-)zero confident
     # matches -> pass-through, not a bogus warp of the whole batch. (Pure noise
     # vs a structured scene: cross-scene ORB matches are negligible.)
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     size = 256
     first = make_scene(size, seed=1)
     rng = np.random.RandomState(7)
@@ -368,7 +377,7 @@ def test_align_mismatched_endpoints_pass_through():
 
 def test_align_preserves_dtype_float64():
     # README: input dtype/device round-trip. float64 in -> float64 out (CPU).
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     images = make_first_zoomed_in().to(torch.float64)
     out = node.apply(images, 800, 15, "auto", "affine", "log", "bicubic", drop_last_frames=0)[0]
     assert out.dtype == torch.float64
@@ -379,9 +388,9 @@ def test_align_all_upscale_methods():
     # Every resampling filter in the parameter list must run, preserve shape,
     # emit finite pixels, and still close the loop (coarse filters allowed to
     # be blockier, hence the lenient bound).
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     images = make_first_zoomed_in()
-    for method in CompensateDriftAlign.upscale_methods:
+    for method in SeamlessLoopAutoAlignFLV.upscale_methods:
         out = node.apply(images, 800, 15, "auto", "affine", "log", method, drop_last_frames=0)[0]
         assert out.shape == images.shape, method
         assert torch.isfinite(out).all(), method
@@ -390,7 +399,7 @@ def test_align_all_upscale_methods():
 
 def test_align_nonsquare_images():
     # H != W exercises the min(h,w)//3 centring box and the h x w res-field grid.
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     h, w, n, drift = 320, 480, 11, 0.05
     base = make_scene_rect(h, w, seed=5)
     frames = [scale_about_center(base, 1.0 + drift * (i / (n - 1)), 1.0 + drift * (i / (n - 1)), h, w)
@@ -404,7 +413,7 @@ def test_align_nonsquare_images():
 def test_align_rotation_drift():
     # A pure in-plane rotation (no scale) must be registered. Similarity holds 4
     # dof (uniform scale + rotation + tx + ty) and must cope; affine as well.
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     h = w = 384
     base = make_scene(h)
     n = 11
@@ -421,7 +430,7 @@ def test_align_pan_drift():
     # Magnitude is kept modest: large pans shift different border content into the
     # frame (border-replicated), which raises the whole-image mean without being a
     # registration failure.
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     h = w = 384
     base = make_scene(h)
     n = 11
@@ -434,7 +443,7 @@ def test_align_pan_drift():
 
 def test_align_output_finite():
     # No NaN/Inf may leak out of the eig-based log/exp path.
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     images = make_first_zoomed_in()
     for interp in ("log", "linear"):
         out = node.apply(images, 800, 15, "auto", "affine", interp, "bicubic", drop_last_frames=0)[0]
@@ -443,7 +452,7 @@ def test_align_output_finite():
 
 def test_align_deterministic():
     # Same input + params -> byte-identical output (ORB/RANSAC are deterministic).
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     images = make_first_zoomed_in()
     key = dict(max_features=800, min_matches=15, anchor_frame="auto", transform="affine",
                interp="log", upscale_method="bicubic")
@@ -456,7 +465,7 @@ def test_align_corrects_drift():
     # Strong correctness check: a colour-coded marker must land at (nearly) the
     # same pixel in every aligned frame. Before alignment its centre follows the
     # zoom; after alignment the drift is removed, so the marker is stationary.
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     h = w = 384
     base = make_scene(w)
     cy, cx = 140, 240
@@ -487,7 +496,7 @@ def test_align_combined_zoom_rotate_pan():
     # different border content into the frame), the zoom-in keeps every sample
     # strictly inside the source, so the composite motion must register *nearly*
     # exactly. Uber test: rectangular image + zoom + rotation + pan.
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     h, w, n = 320, 480, 11
     base = make_scene_rect(h, w, seed=11)
     cx, cy = w // 2, h // 2
@@ -639,7 +648,7 @@ def test_align_radial_closes_loop():
     # affine -- they are mutually exclusive. (The affine mode can PARTIALLY mask
     # radial as a zoom, and vice-versa, so we compare relative residual rather
     # than an absolute bound.)
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     base = make_scene(384, seed=3)
     n = 11
     for k in (0.10, 0.05, -0.05, -0.10):
@@ -666,7 +675,7 @@ def test_align_radial_closes_loop():
 # ---------------------------------------------------------------------------
 
 def test_align_numerical_error_baseline():
-    node = CompensateDriftAlign()
+    node = SeamlessLoopAutoAlignFLV()
     key = dict(max_features=800, min_matches=15, anchor_frame="auto",
                transform="affine", interp="log", upscale_method="bicubic")
 

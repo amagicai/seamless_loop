@@ -1,14 +1,22 @@
-# Compensate Drift (Auto Align First+Last)
+# Seamless Loop (Auto Align FLV)
 
-A ComfyUI custom node that registers every frame of an input batch against a
-single **reference framing** derived from the first and last frames, so that the
-whole sequence plays back with a fixed composition and can be looped seamlessly.
+**Ever looped a video and watched it "jump"?** First-last video (FLV)
+generation models try hard to make the first and last frame match so you can
+loop seamlessly — but they rarely get it perfect. The tiny registration errors
+they leave behind show up as a subtle glitch or hitch every time the video
+wraps around.
 
-Where older drift-compensation nodes applied a blind programmatic zoom, this
-node **measures** the drift by finding real correspondences between the first
-and last frames and fitting a global geometric model to them. Nothing is
-assumed about the drift: it can be a zoom, a pan, a rotation, or any affine
-motion, in either direction.
+This node is a fix for exactly that. It takes your batch of frames, lines them
+all up so they share one steady framing, and eliminates that hitch — down to
+**sub-pixel precision**.
+
+The best part: you don't have to tell it what went wrong. Instead of applying a
+blind, one-size-fits-all zoom like older drift-compensation nodes, it
+**measures** the drift itself — it finds real matching points between your
+first and last frames and fits a geometric model to them. It doesn't assume
+whether the camera zoomed, panned, rotated, or drifted in any other way; it
+just looks at what actually happened and corrects for it. The result is a
+smooth, stable loop that plays back seamlessly.
 
 ---
 
@@ -44,13 +52,13 @@ Clone it straight into `custom_nodes/`:
 
 ```bash
 cd <your-ComfyUI-dir>/custom_nodes
-git clone https://github.com/amagicai/seamless_loop.git
+git clone https://github.com/amagicai/comfyui-seamless-loop.git
 ```
 
-(Or download the ZIP and extract it into `custom_nodes/seamless_loop/`.)
+(Or download the ZIP and extract it into `custom_nodes/comfyui-seamless-loop/`.)
 
 Then restart ComfyUI. The node appears in the node menu under
-**image/batch** as **"Compensate Drift (Auto Align First+Last)"** (also
+**image/batch** as **"Seamless Loop (Auto Align FLV)"** (also
 searchable as `seamless loop`, `autoalign`, `compensate drift`, etc.).
 
 ### Running the tests (optional)
@@ -72,10 +80,10 @@ drops into any workflow that already produces and consumes an `images` stack
 `(B, H, W, C)`. A typical placement is right after the decode and before the
 video writer:
 
-![Compensate Drift wired between VAE Decode and Create Video](comfyui_screenshot.png)
+![Seamless Loop wired between VAE Decode and Create Video](comfyui_screenshot.png)
 
 ```
-VAE Decode ──► Compensate Drift ──► Create Video
+VAE Decode ──► Seamless Loop ──► Create Video
    (images)        (re-register)      (images)
 ```
 
@@ -341,7 +349,7 @@ A single `IMAGE` tensor of shape `(n − drop_last_frames, H, W, C)` on the same
 device and dtype as the input. All retained frames share exactly one framing
 (the chosen anchor).
 
-Every run prints diagnostic logs to the console (prefixed `[seamless_loop]`):
+Every run prints diagnostic logs to the console (prefixed `[comfyui-seamless-loop]`):
 frame count, size, matched/inlier counts, `det` of the last→first map, which
 anchor was chosen (and why), and confirmation that the loop closed.
 
@@ -369,10 +377,11 @@ anchor was chosen (and why), and confirmation that the loop closed.
 
 The suite lives in `tests/test_align.py` and needs `pytest`, `numpy`,
 `torch` and `opencv-python`. The node is **not installed as a package** — it is
-a plain `__init__.py` inside the `seamless_loop/` directory. The test file
-handles the import itself by inserting the *parent* of the package dir onto
-`sys.path` (`tests/test_align.py`), so `from seamless_loop import …` resolves
-no matter what the current working directory is.
+a plain `__init__.py` inside the `comfyui-seamless-loop/` directory, and the
+hyphen in the folder name is not a valid Python import. The test file loads it
+directly with `importlib` (see the top of `tests/test_align.py`), so no package
+installation or `PYTHONPATH` fiddling is required no matter what the current
+working directory is.
 
 Run it from the repository root (the folder containing `tests/`):
 
@@ -380,16 +389,30 @@ Run it from the repository root (the folder containing `tests/`):
 python -m pytest tests/test_align.py -q
 ```
 
-> If you ever see `ModuleNotFoundError: No module named 'seamless_loop'`, the
-> package parent is not on `PYTHONPATH`. Either run the command above from the
-> repository root, or export the parent directory (the `custom_nodes/` folder
-> containing `seamless_loop/`) instead:
->
-> ```bash
-> PYTHONPATH=.. python -m pytest tests/test_align.py -q
-> ```
+To see every test name and the per-case diagnostics (matching, anchoring, and the
+numerical-error baseline), add `-v`:
 
-It verifies the loop closes for zoom-in, zoom-out, and anisotropic drift; that
-forced `first`/`last` anchoring still registers; dtype/device/shape
-preservation; single-frame and featureless pass-through; and the first/last
-blend maths.
+```bash
+python -m pytest tests/test_align.py -v
+```
+
+All **31 tests pass** (a few seconds on CPU). A full run covers:
+
+- **Loop closure** for zoom-in, zoom-out, anisotropic, shear, rotation, pan, and
+  combined zoom+rotate+pan drift, in `affine` and `similarity` modes, with both
+  `log` and `linear` interpolation, across all five `upscale_method` filters.
+- **Anchor logic** — forced `first`/`last` anchoring, and the `auto` decision
+  anchoring to the more zoomed-in endpoint (black-box verified).
+- **Correctness** — an off-centre colour marker must land at (nearly) the same
+  pixel in every aligned frame, proving the drift is actually removed.
+- **Radial distortion** — apply/remove round-trip, solving `k` from clean vs.
+  distorted frames, marker stationarity, and radial mode vs. affine mode residuals.
+- **Edge cases** — zero frames, two frames, `drop_last_frames` clamping, match-gate
+  pass-through, mismatched endpoints, featureless frames, `float64` dtype
+  preservation, determinism, and finite output.
+- **Numerical-error baseline** — the loop-closure error for every drift type is
+  recorded and asserted to stay within 1% of the current baseline, so any
+  regression in registration quality fails immediately.
+
+Some tests write review PNGs into `tests/artifacts_auto/` for eyes-on
+inspection of the input vs. output frames.

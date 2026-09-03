@@ -3,7 +3,7 @@ import torch
 
 
 def _log(*args):
-    print("[seamless_loop]", *args)
+    print("[comfyui-seamless-loop]", *args)
 
 
 def _log2x2(L):
@@ -171,7 +171,7 @@ def solve_radial(ref, drifted, k_range=(-0.4, 0.4), steps=49):
     return float(best_k)
 
 
-class CompensateDriftAlign:
+class SeamlessLoopAutoAlignFLV:
     upscale_methods = ["nearest-exact", "bilinear", "area", "bicubic", "lanczos"]
     transform_methods = ["affine", "similarity", "radial"]
     interp_methods = ["log", "linear"]
@@ -370,9 +370,9 @@ class CompensateDriftAlign:
 
 
 NODE_CLASS_MAPPINGS = {
-    "CompensateDriftAlign": CompensateDriftAlign,
+    "SeamlessLoopAutoAlignFLV": SeamlessLoopAutoAlignFLV,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "CompensateDriftAlign": "Compensate Drift (Auto Align First+Last)",
+    "SeamlessLoopAutoAlignFLV": "Seamless Loop (Auto Align FLV)",
 }
